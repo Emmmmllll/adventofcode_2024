@@ -15,44 +15,45 @@ pub fn main(alloc: Allocator, input: []const u8) !usize {
         const next_level_idx = if (rep_idx + 1 == reports.items.len) levels.items.len else reports.items[rep_idx + 1];
         const report = levels.items[level_idx..next_level_idx];
 
-        if (is_safe(report)) safe_count += 1;
+        if (try is_safe_tolerant(report, alloc)) safe_count += 1;
     }
 
     return safe_count;
 }
 
+fn is_safe_tolerant(report: []const u32, alloc: Allocator) !bool {
+    if (is_safe(report)) return true;
+
+    const sub_report = try alloc.alloc(u32, report.len - 1);
+    defer alloc.free(sub_report);
+
+    for (0..report.len) |ignore_idx| {
+        @memcpy(sub_report[0..ignore_idx], report[0..ignore_idx]);
+        @memcpy(sub_report[ignore_idx..], report[ignore_idx + 1 ..]);
+
+        if (is_safe(sub_report)) return true;
+    }
+
+    return false;
+}
+
 fn is_safe(report: []const u32) bool {
     std.debug.assert(report.len >= 2);
     // get the starting flavor
-    var is_increasing = report[0] < report[1];
-    var skipping_bad = false;
-    var bad_exists = false;
-    var i = 1;
+    const is_increasing = report[0] < report[1];
 
-    while (i < report.len) : (i += 1) {
+    for (1..report.len) |i| {
         const cur = report[i];
-        const last = report[i - if (skipping_bad) @as(usize, 2) else @as(usize, 1)];
-        skipping_bad = false;
+        const last = report[i - 1];
 
-        if (is_step_safe(last, cur, is_increasing)) continue;
-        // only one bad is tolerated
-        if (bad_exists) return false;
-
-        bad_exists = true;
-        skipping_bad = true;
+        // must not be equal
+        if (cur == last) return false;
+        // must stay flavor
+        if ((last < cur) != is_increasing) return false;
+        // must be in step range
+        const diff = if (is_increasing) cur - last else last - cur;
+        if (diff > 3) return false;
     }
-
-    return true;
-}
-
-fn is_step_safe(last: u32, cur: u32, is_increasing: bool) bool {
-    // must not be equal
-    if (cur == last) return false;
-    // must stay flavor
-    if ((last < cur) != is_increasing) return false;
-    // must be in step range
-    const diff = if (is_increasing) cur - last else last - cur;
-    if (diff > 3) return false;
 
     return true;
 }
